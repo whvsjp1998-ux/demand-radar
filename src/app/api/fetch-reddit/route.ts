@@ -19,7 +19,7 @@ const KEYWORDS = [
 ];
 
 const HEADERS = {
-  "User-Agent": "DemandRadar/1.0 (research tool)",
+  "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
   Accept: "application/json",
 };
 
@@ -56,6 +56,35 @@ async function fetchSubredditSearch(
   });
 }
 
+// Must contain at least one tool-signal word
+const TOOL_SIGNALS = [
+  "tool", "app", "software", "automat", "batch", "bulk", "script",
+  "extension", "plugin", "bot", "generat", "convert", "extract", "export",
+  "import", "sync", "integrat", "dashboard", "workflow", "utility", "saas",
+  "platform", "rename", "resize", "compress", "parse", "format", "merge",
+  "split", "backup", "deploy", "schedul", "template", "calculator", "scanner",
+  "tracker", "monitor", "scrape", "api", "program", "website", "service",
+  "build", "creat", "make a", "feature", "download", "upload", "organiz",
+  "manag", "notif", "search tool", "find tool", "open source",
+];
+
+// Exclude posts clearly unrelated to software tools
+const EXCLUDE_SIGNALS = [
+  "wedding", "marriage", "divorce", "relationship", "dating",
+  "recipe", "cooking", "baking", "meal", "food",
+  "doctor", "medical", "health advice", "therapy", "mental health",
+  "lawyer", "legal advice", "lawsuit", "attorney",
+  "mortgage", "real estate", "property", "rent",
+  "fashion", "clothes", "outfit", "gym routine", "workout plan",
+  "grief", "funeral", "religion", "prayer",
+];
+
+function isToolRelated(title: string): boolean {
+  const t = title.toLowerCase();
+  if (EXCLUDE_SIGNALS.some((kw) => t.includes(kw))) return false;
+  return TOOL_SIGNALS.some((kw) => t.includes(kw));
+}
+
 function dedup(posts: RedditPost[]): RedditPost[] {
   const seen = new Set<string>();
   return posts.filter((p) => {
@@ -75,12 +104,12 @@ export async function GET() {
     );
 
     const results = await Promise.all(requests);
-    const posts = dedup(results.flat());
+    const all = dedup(results.flat());
+    const posts = all.filter((p) => isToolRelated(p.title));
 
-    // Sort by upvotes descending
     posts.sort((a, b) => b.upvotes - a.upvotes);
 
-    return NextResponse.json({ posts, total: posts.length });
+    return NextResponse.json({ posts, total: posts.length, filtered: all.length - posts.length });
   } catch {
     return NextResponse.json({ posts: [], total: 0 });
   }

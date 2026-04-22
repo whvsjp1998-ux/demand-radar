@@ -1,9 +1,17 @@
 import { NextRequest, NextResponse } from "next/server";
+import { db } from "@/lib/supabase";
+import { ProxyAgent, fetch as undiciFetch } from "undici";
 
-const SYSTEM_PROMPT =
-  "你是一个出海产品选品专家。用户给你一个英文论坛帖子标题，你需要判断这是否是一个值得做成工具站的需求。评分标准：搜索意图强(+30)、竞争少(+20)、用户愿付费(+20)、技术难度低(+15)、市场大(+15)。只返回 JSON，不要任何其他文字。示例格式：{\"ai_score\":85,\"ai_summary\":\"用一句中文描述需求痛点和机会\",\"keyword\":\"batch file renamer tool\",\"kd_estimate\":\"low\",\"tags\":[\"工具站\",\"SEO友好\"]}";
+const SYSTEM_PROMPT = `你是一个出海产品选品专家。用户给你最多10个英文论坛帖子标题（编号1-N），你需要逐条判断是否值得做成工具站。
+评分标准：搜索意图强(+30)、竞争少(+20)、用户愿付费(+20)、技术难度低(+15)、市场大(+15)。
+只返回 JSON 数组，不要任何其他文字。格式：
+[
+  {"index":1,"title_zh":"批量文件重命名工具","ai_score":85,"ai_summary":"一句中文描述需求痛点和机会","keyword":"batch file renamer tool","kd_estimate":"low","tags":["工具站","SEO友好"]},
+  ...
+]`;
 
 export interface AnalysisResult {
+  title_zh: string;
   ai_score: number;
   ai_summary: string;
   keyword: string;
@@ -11,104 +19,124 @@ export interface AnalysisResult {
   tags: string[];
 }
 
-function extractJson(text: string): AnalysisResult | null {
-  // Try direct parse first
-  try { return JSON.parse(text.trim()); } catch {}
-
-  // Strip markdown code fences
+function extractJsonArray(text: string): unknown[] | null {
+  try { const r = JSON.parse(text.trim()); if (Array.isArray(r)) return r; } catch {}
   const fenced = text.match(/```(?:json)?\s*([\s\S]*?)```/);
-  if (fenced) {
-    try { return JSON.parse(fenced[1].trim()); } catch {}
-  }
-
-  // Extract first {...} block
-  const braceMatch = text.match(/\{[\s\S]*\}/);
-  if (braceMatch) {
-    try { return JSON.parse(braceMatch[0]); } catch {}
-  }
-
+  if (fenced) { try { const r = JSON.parse(fenced[1].trim()); if (Array.isArray(r)) return r; } catch {} }
+  const arrMatch = text.match(/\[[\s\S]*\]/);
+  if (arrMatch) { try { const r = JSON.parse(arrMatch[0]); if (Array.isArray(r)) return r; } catch {} }
   return null;
 }
 
+function normalize(raw: Record<string, unknown>): AnalysisResult {
+  return {
+    title_zh:    typeof raw.title_zh === "string" ? raw.title_zh : "",
+    ai_score:    typeof raw.ai_score === "number" ? Math.min(100, Math.max(0, Math.round(raw.ai_score))) : 50,
+    ai_summary:  typeof raw.ai_summary === "string" ? raw.ai_summary : "",
+    keyword:     typeof raw.keyword === "string" ? raw.keyword : "",
+    kd_estimate: (["low","medium","high"] as const).includes(raw.kd_estimate as "low"|"medium"|"high")
+      ? raw.kd_estimate as "low"|"medium"|"high" : "medium",
+    tags: Array.isArray(raw.tags) ? (raw.tags as string[]).slice(0, 4) : [],
+  };
+}
+
+const FALLBACK: AnalysisResult = {
+  title_zh: "", ai_score: 50, ai_summary: "AI 分析暂时不可用", keyword: "", kd_estimate: "medium", tags: ["工具需求"],
+};
+
+// POST /api/analyze
+// Body: { title: string } — single
+//    OR { titles: Array<{id:string, title:string}> } — batch (up to 10)
 export async function POST(req: NextRequest) {
   const body = await req.json().catch(() => ({}));
-  const title = typeof body.title === "string" ? body.title.trim() : "";
+  const apiKey = process.env.DEEPSEEK_API_KEY;
+  if (!apiKey) return NextResponse.json({ error: "DEEPSEEK_API_KEY not configured" }, { status: 500 });
 
-  if (!title) {
-    return NextResponse.json({ error: "title is required" }, { status: 400 });
+  // ── single mode (backward compat) ──────────────────────────────────────────
+  if (typeof body.title === "string") {
+    const title = body.title.trim();
+    if (!title) return NextResponse.json({ error: "title required" }, { status: 400 });
+
+    const result = await analyzeBatch([{ id: "_", title }], apiKey);
+    return NextResponse.json(result[0]?.result ?? FALLBACK);
   }
 
-  const apiKey = process.env.MINIMAX_API_KEY;
-  if (!apiKey) {
-    return NextResponse.json({ error: "MINIMAX_API_KEY not configured" }, { status: 500 });
+  // ── batch mode ─────────────────────────────────────────────────────────────
+  if (!Array.isArray(body.titles) || body.titles.length === 0) {
+    return NextResponse.json({ error: "titles array required" }, { status: 400 });
   }
+
+  const items: Array<{ id: string; title: string }> = body.titles.slice(0, 10);
+  const results = await analyzeBatch(items, apiKey);
+
+  // persist to Supabase if configured
+  const client = db();
+  if (client) {
+    const rows = results
+      .filter((r) => r.result.ai_score !== 50)
+      .map((r) => ({
+        id: r.id,
+        ai_score: r.result.ai_score,
+        ai_summary: r.result.ai_summary,
+        keyword: r.result.keyword,
+        kd_estimate: r.result.kd_estimate,
+        tags: r.result.tags,
+        analyzed_at: new Date().toISOString(),
+      }));
+    if (rows.length > 0) {
+      client.from("demands").upsert(rows, { onConflict: "id" }).then(({ error }) => {
+        if (error) console.error("[analyze] supabase upsert:", error.message);
+      });
+    }
+  }
+
+  return NextResponse.json(results);
+}
+
+async function analyzeBatch(
+  items: Array<{ id: string; title: string }>,
+  apiKey: string,
+): Promise<Array<{ id: string; result: AnalysisResult }>> {
+  const numbered = items.map((it, i) => `${i + 1}. ${it.title}`).join("\n");
 
   try {
-    const res = await fetch("https://api.minimax.chat/v1/text/chatcompletion_v2", {
+    const proxyUrl = process.env.HTTPS_PROXY || process.env.HTTP_PROXY;
+    const dispatcher = proxyUrl ? new ProxyAgent(proxyUrl) : undefined;
+    const res = await undiciFetch("https://api.deepseek.com/chat/completions", {
       method: "POST",
       headers: {
         Authorization: `Bearer ${apiKey}`,
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        model: "MiniMax-Text-01",
+        model: "deepseek-chat",
         messages: [
           { role: "system", content: SYSTEM_PROMPT },
-          { role: "user", content: title },
+          { role: "user", content: numbered },
         ],
+        temperature: 0.3,
       }),
-    });
-
-    const rawText = await res.text();
+      dispatcher,
+    } as Parameters<typeof undiciFetch>[1]);
 
     if (!res.ok) {
-      console.error("[analyze] MiniMax HTTP", res.status, rawText.slice(0, 300));
-      return NextResponse.json({ error: "upstream API error", detail: rawText.slice(0, 200) }, { status: 502 });
+      console.error("[analyze] DeepSeek HTTP", res.status, await res.text().then(t => t.slice(0,200)));
+      return items.map((it) => ({ id: it.id, result: FALLBACK }));
     }
 
-    let data: Record<string, unknown>;
-    try {
-      data = JSON.parse(rawText);
-    } catch {
-      console.error("[analyze] non-JSON response:", rawText.slice(0, 300));
-      return NextResponse.json({ error: "non-JSON response from MiniMax" }, { status: 502 });
-    }
+    const data = await res.json() as Record<string, unknown>;
+    const content: string = (data?.choices as {message:{content:string}}[])?.[0]?.message?.content ?? "";
+    console.log("[analyze] batch content:", content.slice(0, 300));
 
-    // Log for debugging (server-side only)
-    console.log("[analyze] raw data keys:", Object.keys(data));
+    const arr = extractJsonArray(content);
+    if (!arr) return items.map((it) => ({ id: it.id, result: FALLBACK }));
 
-    const content: string =
-      (data?.choices as Array<{ message?: { content?: string } }>)?.[0]?.message?.content ??
-      (data?.reply as string) ??
-      "";
-
-    console.log("[analyze] content:", content.slice(0, 300));
-
-    const result = extractJson(content);
-
-    if (!result) {
-      console.error("[analyze] could not extract JSON from:", content);
-      // Return a neutral fallback so the frontend doesn't stall
-      return NextResponse.json({
-        ai_score: 50,
-        ai_summary: "AI 解析失败，请稍后重试。",
-        keyword: "",
-        kd_estimate: "medium",
-        tags: ["工具需求"],
-      } satisfies AnalysisResult);
-    }
-
-    return NextResponse.json({
-      ai_score:    typeof result.ai_score === "number"
-        ? Math.min(100, Math.max(0, Math.round(result.ai_score))) : 50,
-      ai_summary:  typeof result.ai_summary === "string" ? result.ai_summary : "",
-      keyword:     typeof result.keyword === "string" ? result.keyword : "",
-      kd_estimate: (["low", "medium", "high"] as const).includes(result.kd_estimate as "low"|"medium"|"high")
-        ? result.kd_estimate as "low"|"medium"|"high" : "medium",
-      tags:        Array.isArray(result.tags) ? result.tags.slice(0, 4) : [],
-    } satisfies AnalysisResult);
+    return items.map((it, i) => {
+      const raw = arr.find((x) => (x as Record<string,unknown>).index === i + 1) ?? arr[i];
+      return { id: it.id, result: raw ? normalize(raw as Record<string,unknown>) : FALLBACK };
+    });
   } catch (err) {
-    console.error("[analyze] unexpected error:", err);
-    return NextResponse.json({ error: "internal error" }, { status: 500 });
+    console.error("[analyze] error:", err);
+    return items.map((it) => ({ id: it.id, result: FALLBACK }));
   }
 }

@@ -1,0 +1,17 @@
+{
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Write|Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "shell": "powershell",
+            "command": "$d = $input | ConvertFrom-Json; $fp = $d.tool_input.file_path; if ($fp -like '*demand-radar*' -and $fp -notlike '*CONTEXT.md*') { $msg = @{ hookSpecificOutput = @{ hookEventName = 'PostToolUse'; additionalContext = 'Reminder: please update CONTEXT.md — move completed tasks to done, update in-progress and next steps.' } } | ConvertTo-Json -Compress; Write-Output $msg }",
+            "statusMessage": "Checking CONTEXT.md reminder..."
+          }
+        ]
+      }
+    ]
+  }
+}

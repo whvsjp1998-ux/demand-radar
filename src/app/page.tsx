@@ -7,6 +7,7 @@ import type { AnalysisResult } from "./api/analyze/route";
 
 type Status = "待审核" | "可行" | "暂缓" | null;
 type Filter = "全部" | "可行" | "待审核";
+type SortBy = "热度" | "AI评分";
 
 interface Tag {
   label: string;
@@ -153,7 +154,7 @@ function AiScoreSkeleton() {
 
 // ─── main page ───────────────────────────────────────────────────────────────
 
-const ANALYZE_BATCH = 3; // concurrent AI requests at a time
+const ANALYZE_BATCH = 10; // items per batch request to DeepSeek
 
 export default function Page() {
   const [demands, setDemands]       = useState<Demand[]>([]);
@@ -161,15 +162,41 @@ export default function Page() {
   const [error, setError]           = useState<string | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [filter, setFilter]         = useState<Filter>("全部");
+  const [sortBy, setSortBy]         = useState<SortBy>("热度");
   const [statuses, setStatuses]     = useState<Record<string, Status>>({});
 
   // AI analysis state
   const [analyses, setAnalyses]         = useState<Record<string, AnalysisResult>>({});
   const [analyzingIds, setAnalyzingIds] = useState<Set<string>>(new Set());
 
-  const analyzeAll = useCallback(async (demandList: Demand[]) => {
-    for (let i = 0; i < demandList.length; i += ANALYZE_BATCH) {
-      const batch = demandList.slice(i, i + ANALYZE_BATCH);
+  const analyzeOne = useCallback(async (demand: Demand) => {
+    setAnalyzingIds((prev) => { if (prev.has(demand.id)) return prev; const n = new Set(prev); n.add(demand.id); return n; });
+    try {
+      const res = await fetch("/api/analyze", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ titles: [{ id: demand.id, title: demand.title }] }),
+      });
+      if (res.ok) {
+        const results: Array<{ id: string; result: AnalysisResult }> = await res.json();
+        setAnalyses((prev) => {
+          const next = { ...prev };
+          results.forEach(({ id, result }) => { next[id] = result; });
+          return next;
+        });
+      }
+    } catch {}
+    finally {
+      setAnalyzingIds((prev) => { const n = new Set(prev); n.delete(demand.id); return n; });
+    }
+  }, []);
+
+  const analyzeAll = useCallback(async (demandList: Demand[], skipIds?: Set<string>) => {
+    const toAnalyze = skipIds ? demandList.filter((d) => !skipIds.has(d.id)) : demandList;
+    if (toAnalyze.length === 0) return;
+
+    for (let i = 0; i < toAnalyze.length; i += ANALYZE_BATCH) {
+      const batch = toAnalyze.slice(i, i + ANALYZE_BATCH);
 
       setAnalyzingIds((prev) => {
         const next = new Set(prev);
@@ -177,56 +204,115 @@ export default function Page() {
         return next;
       });
 
-      await Promise.all(
-        batch.map(async (d) => {
-          try {
-            const res = await fetch("/api/analyze", {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ title: d.title }),
-            });
-            if (!res.ok) throw new Error("failed");
-            const result: AnalysisResult = await res.json();
-            setAnalyses((prev) => ({ ...prev, [d.id]: result }));
-          } catch {
-            // silently skip; card keeps computed score
-          } finally {
-            setAnalyzingIds((prev) => {
-              const next = new Set(prev);
-              next.delete(d.id);
-              return next;
-            });
-          }
-        }),
-      );
+      try {
+        const res = await fetch("/api/analyze", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ titles: batch.map((d) => ({ id: d.id, title: d.title })) }),
+        });
+        if (res.ok) {
+          const results: Array<{ id: string; result: AnalysisResult }> = await res.json();
+          setAnalyses((prev) => {
+            const next = { ...prev };
+            results.forEach(({ id, result }) => { next[id] = result; });
+            return next;
+          });
+        }
+      } catch {
+        // silently skip batch
+      } finally {
+        setAnalyzingIds((prev) => {
+          const next = new Set(prev);
+          batch.forEach((d) => next.delete(d.id));
+          return next;
+        });
+      }
     }
   }, []);
 
-  const fetchReddit = useCallback(async () => {
+  const fetchAll = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch("/api/fetch-reddit");
-      if (!res.ok) throw new Error("network error");
-      const { posts }: { posts: RedditPost[] } = await res.json();
-      const mapped = posts.map(redditToDemand);
+      const [redditRes, phRes, dbRes] = await Promise.allSettled([
+        fetch("/api/fetch-reddit"),
+        fetch("/api/fetch-producthunt"),
+        fetch("/api/demands"),
+      ]);
+
+      const redditPosts: RedditPost[] =
+        redditRes.status === "fulfilled" && redditRes.value.ok
+          ? (await redditRes.value.json()).posts ?? [] : [];
+
+      const phPosts: RedditPost[] =
+        phRes.status === "fulfilled" && phRes.value.ok
+          ? (await phRes.value.json()).posts ?? [] : [];
+
+      // load persisted statuses + analyses from DB
+      type DbRow = { id: string; status?: string; ai_score?: number; ai_summary?: string; keyword?: string; kd_estimate?: string; tags?: string[] };
+      const dbRows: DbRow[] =
+        dbRes.status === "fulfilled" && dbRes.value.ok
+          ? (await dbRes.value.json()).demands ?? [] : [];
+
+      const persistedStatuses: Record<string, Status> = {};
+      const persistedAnalyses: Record<string, AnalysisResult> = {};
+      const analyzedIds = new Set<string>();
+
+      dbRows.forEach((row) => {
+        if (row.status) persistedStatuses[row.id] = row.status as Status;
+        if (row.ai_score != null) {
+          persistedAnalyses[row.id] = {
+            ai_score: row.ai_score,
+            ai_summary: row.ai_summary ?? "",
+            keyword: row.keyword ?? "",
+            kd_estimate: (row.kd_estimate as "low"|"medium"|"high") ?? "medium",
+            tags: row.tags ?? [],
+          };
+          analyzedIds.add(row.id);
+        }
+      });
+
+      const allPosts = [...redditPosts, ...phPosts];
+      const seen = new Set<string>();
+      const unique = allPosts.filter((p) => { if (seen.has(p.id)) return false; seen.add(p.id); return true; });
+      const mapped = unique.map(redditToDemand);
+
       setDemands(mapped);
-      setAnalyses({});
+      setStatuses(persistedStatuses);
+      setAnalyses(persistedAnalyses);
       setAnalyzingIds(new Set());
       if (mapped.length > 0) setSelectedId(mapped[0].id);
-      // start AI analysis after data is displayed
-      analyzeAll(mapped);
+
+      // save new posts to DB, then analyze only those not yet analyzed
+      if (mapped.length > 0) {
+        fetch("/api/demands", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(mapped.map((d) => ({
+            id: d.id, title: d.title, url: d.url,
+            upvotes: d.likes, comments: d.comments,
+            source: d.source, created_date: d.date,
+          }))),
+        }).catch(() => {});
+      }
+
+      analyzeAll(mapped, analyzedIds);
     } catch {
-      setError("获取 Reddit 数据失败，请刷新重试");
+      setError("获取数据失败，请刷新重试");
     } finally {
       setLoading(false);
     }
   }, [analyzeAll]);
 
-  useEffect(() => { fetchReddit(); }, [fetchReddit]);
+  useEffect(() => { fetchAll(); }, [fetchAll]);
 
   function updateStatus(id: string, status: Status) {
     setStatuses((prev) => ({ ...prev, [id]: status }));
+    fetch("/api/demands", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id, status }),
+    }).catch(() => {});
   }
 
   const demandsWithStatus = demands.map((d) => ({
@@ -234,11 +320,20 @@ export default function Page() {
     status: statuses[d.id] ?? null,
   }));
 
-  const filtered = demandsWithStatus.filter((d) => {
-    if (filter === "可行")   return d.status === "可行";
-    if (filter === "待审核") return d.status === "待审核";
-    return true;
-  });
+  const filtered = demandsWithStatus
+    .filter((d) => {
+      if (filter === "可行")   return d.status === "可行";
+      if (filter === "待审核") return d.status === "待审核";
+      return true;
+    })
+    .sort((a, b) => {
+      if (sortBy === "AI评分") {
+        const sa = analyses[a.id]?.ai_score ?? a.score;
+        const sb = analyses[b.id]?.ai_score ?? b.score;
+        return sb - sa;
+      }
+      return b.likes - a.likes;
+    });
 
   const selected = demandsWithStatus.find((d) => d.id === selectedId) ?? null;
   const selectedAnalysis = selected ? (analyses[selected.id] ?? null) : null;
@@ -263,13 +358,13 @@ export default function Page() {
       {/* Sidebar */}
       <aside className="w-64 h-screen border-r border-zinc-200/50 bg-zinc-50/50 backdrop-blur-xl flex flex-col pt-8 pb-4 shrink-0">
         <div className="px-6 mb-8">
-          <h1 className="text-blue-600 font-black tracking-widest uppercase text-xs">Demand Radar</h1>
-          <p className="text-[10px] text-zinc-400 font-medium tracking-widest mt-1">INTELLIGENCE SUITE</p>
+          <h1 className="text-blue-600 font-black tracking-widest uppercase text-xs">需求雷达</h1>
+          <p className="text-[10px] text-zinc-400 font-medium tracking-widest mt-1">智能选品套件</p>
         </div>
         <nav className="flex-1">
           <a href="#" className="flex items-center text-blue-600 font-bold border-r-2 border-blue-600 pl-4 py-3 mx-2 rounded-l-lg transition-all hover:bg-zinc-200/30">
             <span className="material-symbols-outlined mr-3">radar</span>
-            <span className="text-[13px] font-medium">Market Radar</span>
+            <span className="text-[13px] font-medium">市场雷达</span>
           </a>
         </nav>
         <div className="px-6 pt-4 border-t border-zinc-200/30">
@@ -277,7 +372,7 @@ export default function Page() {
             <div className="w-8 h-8 rounded-full bg-blue-600 flex items-center justify-center text-white text-xs font-bold shrink-0">A</div>
             <div className="flex flex-col">
               <span className="text-xs font-bold">Alex Chen</span>
-              <span className="text-[10px] text-zinc-500">Premium Plan</span>
+              <span className="text-[10px] text-zinc-500">高级套餐</span>
             </div>
           </div>
         </div>
@@ -290,7 +385,7 @@ export default function Page() {
           <div className="flex items-center gap-4 flex-1">
             <div className="relative max-w-md w-full">
               <span className="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400 text-lg">search</span>
-              <input className="w-full bg-zinc-100/50 border-none rounded-xl py-2 pl-10 pr-4 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 transition-all" placeholder="Search signals or markets..." type="text" />
+              <input className="w-full bg-zinc-100/50 border-none rounded-xl py-2 pl-10 pr-4 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 transition-all" placeholder="搜索需求或市场..." type="text" />
             </div>
           </div>
           <div className="flex items-center gap-4">
@@ -300,11 +395,11 @@ export default function Page() {
                 AI 分析中 {Object.keys(analyses).length}/{demands.length}
               </span>
             )}
-            <button onClick={fetchReddit} className="w-10 h-10 flex items-center justify-center rounded-lg hover:bg-zinc-100/50 transition-all" title="刷新数据">
+            <button onClick={fetchAll} className="w-10 h-10 flex items-center justify-center rounded-lg hover:bg-zinc-100/50 transition-all" title="刷新数据">
               <span className={`material-symbols-outlined text-zinc-600 ${loading ? "animate-spin" : ""}`}>refresh</span>
             </button>
             <div className="h-6 w-px bg-zinc-200 mx-2" />
-            <span className="text-sm font-semibold tracking-tight text-zinc-900">市场雷达 (Market Radar)</span>
+            <span className="text-sm font-semibold tracking-tight text-zinc-900">市场雷达</span>
           </div>
         </header>
 
@@ -343,9 +438,14 @@ export default function Page() {
               </div>
               <div className="flex items-center gap-3">
                 <span className="text-[12px] text-zinc-400">排序方式:</span>
-                <button className="flex items-center gap-2 bg-white border border-zinc-200 px-3 py-1.5 rounded-md text-sm font-medium text-zinc-700">
-                  按热度 <span className="material-symbols-outlined text-sm">expand_more</span>
-                </button>
+                <div className="flex items-center gap-1 p-1 bg-zinc-100/50 rounded-lg">
+                  {(["热度", "AI评分"] as SortBy[]).map((s) => (
+                    <button key={s} onClick={() => setSortBy(s)}
+                      className={`px-3 py-1 text-xs font-semibold rounded-md transition-all ${sortBy === s ? "bg-white shadow-sm text-blue-600" : "text-zinc-500 hover:text-zinc-800"}`}>
+                      {s === "热度" ? "🔥 按热度" : "🤖 按AI评分"}
+                    </button>
+                  ))}
+                </div>
               </div>
             </div>
 
@@ -378,7 +478,10 @@ export default function Page() {
                   return (
                     <div
                       key={demand.id}
-                      onClick={() => setSelectedId(demand.id)}
+                      onClick={() => {
+                        setSelectedId(demand.id);
+                        if (!analyses[demand.id] && !analyzingIds.has(demand.id)) analyzeOne(demand);
+                      }}
                       className={`group relative bg-white p-6 rounded-xl cursor-pointer transition-all ${
                         isActive
                           ? "border-2 border-blue-500 ring-4 ring-blue-100/60 shadow-sm"
@@ -414,16 +517,19 @@ export default function Page() {
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center justify-between mb-2">
                             <div className="flex items-center gap-2">
-                              <div className="w-5 h-5 bg-orange-500 rounded flex items-center justify-center">
-                                <span className="text-[10px] text-white font-bold">R</span>
+                              <div className={`w-5 h-5 rounded flex items-center justify-center ${demand.id.startsWith("ph_") ? "bg-[#ff6154]" : "bg-orange-500"}`}>
+                                <span className="text-[10px] text-white font-bold">{demand.id.startsWith("ph_") ? "P" : "R"}</span>
                               </div>
                               <span className="text-[12px] text-zinc-500 font-bold uppercase tracking-wider">{demand.source}</span>
                             </div>
                             <StatusBadge status={demand.status} />
                           </div>
                           <h3 className="text-[16px] font-semibold text-zinc-900 mb-3 group-hover:text-blue-600 transition-colors leading-snug line-clamp-2">
-                            {demand.title}
+                            {ai?.title_zh || demand.title}
                           </h3>
+                          {ai?.title_zh && (
+                            <p className="text-[11px] text-zinc-300 mb-2 line-clamp-1">{demand.title}</p>
+                          )}
                           {/* AI summary on card if available */}
                           {ai?.ai_summary && (
                             <p className="text-[12px] text-zinc-400 mb-2 line-clamp-1">{ai.ai_summary}</p>
@@ -468,7 +574,9 @@ export default function Page() {
                 <div className="p-6 border-b border-zinc-200/50">
                   <div className="flex items-center justify-between mb-4">
                     <div className="flex items-center gap-3">
-                      <div className="w-10 h-10 bg-orange-500 rounded-lg flex items-center justify-center text-white font-bold">R</div>
+                      <div className={`w-10 h-10 rounded-lg flex items-center justify-center text-white font-bold ${selected?.id.startsWith("ph_") ? "bg-[#ff6154]" : "bg-orange-500"}`}>
+                        {selected?.id.startsWith("ph_") ? "P" : "R"}
+                      </div>
                       <div>
                         <h4 className="text-sm font-bold text-zinc-900">Reddit / {selected.source}</h4>
                         <span className="text-xs text-zinc-400">{selected.date}</span>
@@ -478,11 +586,16 @@ export default function Page() {
                       <span className="material-symbols-outlined">more_vert</span>
                     </button>
                   </div>
-                  <h2 className="text-[22px] font-semibold text-zinc-900 leading-tight mb-4">{selected.title}</h2>
+                  <h2 className="text-[22px] font-semibold text-zinc-900 leading-tight mb-4">
+                    {selectedAnalysis?.title_zh || selected.title}
+                    {selectedAnalysis?.title_zh && (
+                      <span className="block text-[13px] text-zinc-400 font-normal mt-1">{selected.title}</span>
+                    )}
+                  </h2>
                   <a href={selected.url} target="_blank" rel="noopener noreferrer"
                     className="inline-flex items-center gap-2 px-4 py-2 bg-zinc-900 text-white text-sm font-bold rounded-lg hover:bg-zinc-800 transition-all w-full justify-center">
                     <span className="material-symbols-outlined text-lg">open_in_new</span>
-                    查看原始帖子 (View Original Post)
+                    查看原始帖子
                   </a>
                 </div>
 
@@ -605,7 +718,7 @@ export default function Page() {
                         selected.status === "可行" ? "bg-emerald-600 text-white" : "bg-emerald-500 text-white hover:bg-emerald-600"
                       }`}>
                       <span className="material-symbols-outlined text-lg">check_circle</span>
-                      标记为可行 (Go)
+                      标记为可行
                     </button>
                     <div className="grid grid-cols-2 gap-2">
                       <button onClick={() => updateStatus(selected.id, "待审核")}
