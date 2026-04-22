@@ -1,0 +1,481 @@
+<!DOCTYPE html>
+
+<html lang="zh-CN"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Market Radar - Demand Radar</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    "colors": {
+                        "primary-fixed": "#d8e2ff",
+                        "primary-fixed-dim": "#adc6ff",
+                        "error": "#ba1a1a",
+                        "on-secondary": "#ffffff",
+                        "background": "#f9f9ff",
+                        "on-tertiary-fixed": "#351000",
+                        "outline": "#717786",
+                        "on-primary": "#ffffff",
+                        "tertiary-container": "#c64f00",
+                        "tertiary-fixed": "#ffdbcc",
+                        "on-surface": "#181c23",
+                        "on-tertiary-fixed-variant": "#7c2e00",
+                        "on-primary-fixed-variant": "#004493",
+                        "surface-container-high": "#e6e8f3",
+                        "outline-variant": "#c1c6d7",
+                        "surface-bright": "#f9f9ff",
+                        "on-primary-fixed": "#001a41",
+                        "on-surface-variant": "#414755",
+                        "surface-container-lowest": "#ffffff",
+                        "tertiary-fixed-dim": "#ffb595",
+                        "primary": "#0058bc",
+                        "error-container": "#ffdad6",
+                        "surface-variant": "#e0e2ed",
+                        "on-tertiary-container": "#fffbff",
+                        "on-secondary-fixed": "#1b1b1d",
+                        "secondary-container": "#e2dfe1",
+                        "surface-container-highest": "#e0e2ed",
+                        "surface-dim": "#d8d9e5",
+                        "inverse-surface": "#2d3039",
+                        "secondary": "#5f5e60",
+                        "on-tertiary": "#ffffff",
+                        "inverse-primary": "#adc6ff",
+                        "on-secondary-container": "#636264",
+                        "surface-container": "#ecedf9",
+                        "surface-container-low": "#f1f3fe",
+                        "on-primary-container": "#fefcff",
+                        "surface": "#f9f9ff",
+                        "on-error-container": "#93000a",
+                        "secondary-fixed-dim": "#c8c6c8",
+                        "primary-container": "#0070eb",
+                        "inverse-on-surface": "#eef0fc",
+                        "on-secondary-fixed-variant": "#474649",
+                        "on-error": "#ffffff",
+                        "surface-tint": "#005bc1",
+                        "secondary-fixed": "#e4e2e4",
+                        "on-background": "#181c23",
+                        "tertiary": "#9e3d00"
+                    },
+                    "borderRadius": {
+                        "DEFAULT": "8px",
+                        "lg": "12px",
+                        "xl": "16px",
+                        "2xl": "24px",
+                        "full": "9999px"
+                    },
+                    "spacing": {
+                        "xl": "40px",
+                        "sm": "8px",
+                        "container-margin": "32px",
+                        "lg": "24px",
+                        "md": "16px",
+                        "xs": "4px",
+                        "gutter": "20px",
+                        "unit": "4px"
+                    },
+                    "fontFamily": {
+                        "h2": ["Inter"],
+                        "label-caps": ["Inter"],
+                        "caption": ["Inter"],
+                        "display": ["Inter"],
+                        "body-lg": ["Inter"],
+                        "h1": ["Inter"],
+                        "body-md": ["Inter"]
+                    },
+                    "fontSize": {
+                        "h2": ["24px", {"lineHeight": "1.3", "letterSpacing": "-0.01em", "fontWeight": "600"}],
+                        "label-caps": ["12px", {"lineHeight": "1", "letterSpacing": "0.05em", "fontWeight": "600"}],
+                        "caption": ["13px", {"lineHeight": "1.4", "letterSpacing": "0", "fontWeight": "500"}],
+                        "display": ["48px", {"lineHeight": "1.1", "letterSpacing": "-0.02em", "fontWeight": "700"}],
+                        "body-lg": ["17px", {"lineHeight": "1.5", "letterSpacing": "-0.01em", "fontWeight": "400"}],
+                        "h1": ["32px", {"lineHeight": "1.2", "letterSpacing": "-0.015em", "fontWeight": "600"}],
+                        "body-md": ["15px", {"lineHeight": "1.5", "letterSpacing": "0", "fontWeight": "400"}]
+                    }
+                },
+            },
+        }
+    </script>
+<style>
+        body { font-family: 'Inter', sans-serif; -webkit-font-smoothing: antialiased; }
+        .material-symbols-outlined { font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24; }
+        .glass-card { background: rgba(255, 255, 255, 0.7); backdrop-filter: blur(20px); border: 1px solid rgba(0, 0, 0, 0.08); }
+        .no-scrollbar::-webkit-scrollbar { display: none; }
+        .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+        .tag-green { background-color: #ecfdf5; color: #059669; border: 1px solid #d1fae5; }
+        .tag-red { background-color: #fef2f2; color: #dc2626; border: 1px solid #fee2e2; }
+        .tag-neutral { background-color: #f1f5f9; color: #475569; border: 1px solid #e2e8f0; }
+    </style>
+</head>
+<body class="bg-background text-on-surface flex h-screen overflow-hidden">
+<aside class="docked left-0 h-screen border-r border-zinc-200/50 dark:border-zinc-800/50 w-64 bg-zinc-50/50 backdrop-blur-xl dark:bg-zinc-950/50 flex flex-col pt-8 pb-4 space-y-2 shrink-0">
+<div class="px-6 mb-8">
+<h1 class="text-blue-600 font-black tracking-widest uppercase text-xs">Demand Radar</h1>
+<p class="text-[10px] text-zinc-400 font-medium tracking-widest mt-1">INTELLIGENCE SUITE</p>
+</div>
+<nav class="flex-1">
+<a class="flex items-center text-blue-600 dark:text-blue-400 font-bold border-r-2 border-blue-600 pl-4 py-3 mx-2 rounded-r-none transition-all duration-200 hover:bg-zinc-200/30" href="#">
+<span class="material-symbols-outlined mr-3">radar</span>
+<span class="font-sans text-[13px] font-medium">Market Radar</span>
+</a>
+</nav>
+<div class="px-6 pt-4 border-t border-zinc-200/30">
+<div class="flex items-center gap-3">
+<div class="w-8 h-8 rounded-full bg-primary-container flex items-center justify-center text-white overflow-hidden">
+<img alt="User" src="https://lh3.googleusercontent.com/aida-public/AB6AXuA4fkFX7MDmVT8BQuI7r7fmTFLGdjsMbw9lPnc26z4LxVt8MBnMGxf2RKUN-lQAGnldrBR_Lim3uiv83rmWGjiSC9g2_diceozfQgflmMZCmIa-daR7c1GBFdTHXw9ouu5Jh9HWRuTvnIRdp7x_2Adkg0onlxDjfbIjBPQlEi1-52t6JRrZIeY_v5rJWpcFLLpOsxwOgu9OD1pKfHBVNAX51lEd6FmJVeqcQ6cxxv3PLxlUsIYDLZ7NVWbASB_yxJUnQyJINFHaT5o"/>
+</div>
+<div class="flex flex-col">
+<span class="text-xs font-bold text-on-surface">Alex Chen</span>
+<span class="text-[10px] text-zinc-500">Premium Plan</span>
+</div>
+</div>
+</div>
+</aside>
+<div class="flex-1 flex flex-col min-w-0">
+<header class="flex justify-between items-center h-16 px-6 sticky top-0 z-50 w-full bg-white/70 backdrop-blur-2xl dark:bg-zinc-900/70 shadow-[0_1px_0_0_rgba(0,0,0,0.05)] border-b border-zinc-200/50">
+<div class="flex items-center gap-4 flex-1">
+<div class="relative max-w-md w-full">
+<span class="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400 text-lg">search</span>
+<input class="w-full bg-zinc-100/50 border-none rounded-xl py-2 pl-10 pr-4 text-sm focus:ring-2 focus:ring-blue-500/20 transition-all" placeholder="Search signals or markets..." type="text"/>
+</div>
+</div>
+<div class="flex items-center gap-4">
+<button class="w-10 h-10 flex items-center justify-center rounded-lg hover:bg-zinc-100/50 transition-all">
+<span class="material-symbols-outlined text-zinc-600">notifications</span>
+</button>
+<div class="h-6 w-[1px] bg-zinc-200 mx-2"></div>
+<span class="font-sans text-sm font-semibold tracking-tight text-zinc-900">市场雷达 (Market Radar)</span>
+</div>
+</header>
+<main class="flex-1 flex overflow-hidden p-container-margin gap-lg">
+<!-- Feed Column -->
+<div class="flex-1 flex flex-col min-w-0 space-y-lg overflow-y-auto no-scrollbar">
+<div class="grid grid-cols-4 gap-gutter">
+<div class="glass-card p-lg rounded-xl flex flex-col">
+<span class="text-caption text-zinc-500 mb-1">今日新增</span>
+<div class="flex items-end justify-between">
+<span class="text-h1 font-bold text-zinc-900">12</span>
+<span class="material-symbols-outlined text-blue-600 mb-1">add_chart</span>
+</div>
+</div>
+<div class="glass-card p-lg rounded-xl flex flex-col">
+<span class="text-caption text-zinc-500 mb-1">可行需求</span>
+<div class="flex items-end justify-between">
+<span class="text-h1 font-bold text-zinc-900">3</span>
+<span class="material-symbols-outlined text-emerald-600 mb-1">check_circle</span>
+</div>
+</div>
+<div class="glass-card p-lg rounded-xl flex flex-col">
+<span class="text-caption text-zinc-500 mb-1">待审核</span>
+<div class="flex items-end justify-between">
+<span class="text-h1 font-bold text-zinc-900">8</span>
+<span class="material-symbols-outlined text-amber-500 mb-1">pending</span>
+</div>
+</div>
+<div class="glass-card p-lg rounded-xl flex flex-col">
+<span class="text-caption text-zinc-500 mb-1">平均AI评分</span>
+<div class="flex items-end justify-between">
+<span class="text-h1 font-bold text-zinc-900">84</span>
+<span class="material-symbols-outlined text-purple-500 mb-1">psychology</span>
+</div>
+</div>
+</div>
+<div class="flex items-center justify-between">
+<div class="flex items-center gap-2 p-1 bg-zinc-100/50 rounded-lg">
+<button class="px-4 py-1.5 text-sm font-semibold bg-white shadow-sm rounded-md text-blue-600">全部</button>
+<button class="px-4 py-1.5 text-sm font-medium text-zinc-500 hover:text-zinc-800 transition-colors">可行</button>
+<button class="px-4 py-1.5 text-sm font-medium text-zinc-500 hover:text-zinc-800 transition-colors">待审核</button>
+</div>
+<div class="flex items-center gap-3">
+<span class="text-caption text-zinc-400">排序方式:</span>
+<button class="flex items-center gap-2 bg-white border border-zinc-200 px-3 py-1.5 rounded-md text-sm font-medium text-zinc-700">
+                        按AI评分 <span class="material-symbols-outlined text-sm">expand_more</span>
+</button>
+</div>
+</div>
+<div class="space-y-md">
+<!-- Card 1 -->
+<div class="group relative bg-white border-2 border-primary-container p-lg rounded-xl shadow-sm cursor-pointer ring-4 ring-primary-fixed/20">
+<div class="flex gap-md">
+<div class="relative shrink-0 flex flex-col items-center gap-1">
+<div class="relative flex items-center justify-center w-14 h-14 rounded-full border-4 border-emerald-100">
+<span class="text-lg font-bold text-emerald-600">92</span>
+<svg class="absolute -inset-1 w-16 h-16 rotate-[-90deg]">
+<circle class="text-emerald-500" cx="32" cy="32" fill="transparent" r="30" stroke="currentColor" stroke-dasharray="188.5" stroke-dashoffset="15" stroke-width="3"></circle>
+</svg>
+</div>
+</div>
+<div class="flex-1">
+<div class="flex items-center justify-between mb-2">
+<div class="flex items-center gap-2">
+<div class="w-5 h-5 bg-orange-500 rounded flex items-center justify-center"><span class="text-[10px] text-white font-bold">R</span></div>
+<span class="text-caption text-zinc-500 font-bold uppercase tracking-wider">r/DataHoarder</span>
+</div>
+<span class="px-2 py-0.5 bg-amber-50 text-amber-600 text-[11px] font-bold rounded-full border border-amber-100 uppercase">待审核</span>
+</div>
+<h3 class="font-h2 text-zinc-900 mb-3 group-hover:text-blue-600 transition-colors">Need a tool to batch rename files based on content</h3>
+<div class="flex items-center gap-4 flex-wrap">
+<div class="flex items-center gap-1.5 text-zinc-400">
+<span class="material-symbols-outlined text-base">thumb_up</span>
+<span class="text-xs font-medium">847</span>
+</div>
+<div class="flex items-center gap-1.5 text-zinc-400">
+<span class="material-symbols-outlined text-base">trending_up</span>
+<span class="text-xs font-medium">2.4k/mo</span>
+</div>
+<div class="ml-auto flex gap-2">
+<span class="tag-neutral text-[10px] font-bold px-2 py-0.5 rounded-md uppercase">工具站</span>
+<span class="tag-green text-[10px] font-bold px-2 py-0.5 rounded-md uppercase">SEO友好</span>
+<span class="tag-green text-[10px] font-bold px-2 py-0.5 rounded-md uppercase">高意图</span>
+</div>
+</div>
+</div>
+</div>
+</div>
+<!-- Card 2 -->
+<div class="group bg-white border border-zinc-200 p-lg rounded-xl hover:border-zinc-300 transition-all cursor-pointer">
+<div class="flex gap-md">
+<div class="relative shrink-0 flex flex-col items-center">
+<div class="relative flex items-center justify-center w-14 h-14 rounded-full border-4 border-zinc-100">
+<span class="text-lg font-bold text-zinc-500">78</span>
+<svg class="absolute -inset-1 w-16 h-16 rotate-[-90deg]"><circle class="text-zinc-200" cx="32" cy="32" fill="transparent" r="30" stroke="currentColor" stroke-dasharray="188.5" stroke-dashoffset="41" stroke-width="3"></circle></svg>
+</div>
+</div>
+<div class="flex-1">
+<div class="flex items-center justify-between mb-2">
+<div class="flex items-center gap-2">
+<div class="w-5 h-5 bg-orange-500 rounded flex items-center justify-center"><span class="text-[10px] text-white font-bold">R</span></div>
+<span class="text-caption text-zinc-500 font-bold uppercase tracking-wider">r/Notion</span>
+</div>
+</div>
+<h3 class="font-h2 text-zinc-900 mb-3 group-hover:text-blue-600 transition-colors">Is there any free tool to convert Notion pages to PDF automatically?</h3>
+<div class="flex items-center gap-4">
+<span class="text-xs text-zinc-400">1.8k searches/mo</span>
+<div class="ml-auto flex gap-2">
+<span class="tag-neutral text-[10px] font-bold px-2 py-0.5 rounded-md uppercase">工具站</span>
+<span class="tag-neutral text-[10px] font-bold px-2 py-0.5 rounded-md uppercase">中等竞争</span>
+</div>
+</div>
+</div>
+</div>
+</div>
+<!-- Card 3 -->
+<div class="group bg-white border border-zinc-200 p-lg rounded-xl hover:border-zinc-300 transition-all cursor-pointer">
+<div class="flex gap-md">
+<div class="relative shrink-0 flex flex-col items-center">
+<div class="relative flex items-center justify-center w-14 h-14 rounded-full border-4 border-emerald-100">
+<span class="text-lg font-bold text-emerald-600">95</span>
+<svg class="absolute -inset-1 w-16 h-16 rotate-[-90deg]"><circle class="text-emerald-500" cx="32" cy="32" fill="transparent" r="30" stroke="currentColor" stroke-dasharray="188.5" stroke-dashoffset="9" stroke-width="3"></circle></svg>
+</div>
+</div>
+<div class="flex-1">
+<div class="flex items-center justify-between mb-2">
+<div class="flex items-center gap-2">
+<div class="w-5 h-5 bg-red-600 rounded-full flex items-center justify-center"><span class="text-[10px] text-white font-bold">P</span></div>
+<span class="text-caption text-zinc-500 font-bold uppercase tracking-wider">Product Hunt</span>
+</div>
+<span class="px-2 py-0.5 bg-emerald-50 text-emerald-600 text-[11px] font-bold rounded-full border border-emerald-100 uppercase">可行</span>
+</div>
+<h3 class="font-h2 text-zinc-900 mb-3 group-hover:text-blue-600 transition-colors">I wish there was an AI that could auto-generate alt text for all my images</h3>
+<div class="flex items-center gap-4">
+<span class="text-xs text-zinc-400">3.2k searches/mo</span>
+<div class="ml-auto flex gap-2">
+<span class="tag-green text-[10px] font-bold px-2 py-0.5 rounded-md uppercase">强相关</span>
+<span class="tag-green text-[10px] font-bold px-2 py-0.5 rounded-md uppercase">高意图</span>
+</div>
+</div>
+</div>
+</div>
+</div>
+<!-- Card 4 -->
+<div class="group bg-white border border-zinc-200 p-lg rounded-xl hover:border-zinc-300 transition-all cursor-pointer">
+<div class="flex gap-md">
+<div class="relative shrink-0 flex flex-col items-center">
+<div class="relative flex items-center justify-center w-14 h-14 rounded-full border-4 border-amber-100">
+<span class="text-lg font-bold text-amber-600">61</span>
+<svg class="absolute -inset-1 w-16 h-16 rotate-[-90deg]"><circle class="text-amber-500" cx="32" cy="32" fill="transparent" r="30" stroke="currentColor" stroke-dasharray="188.5" stroke-dashoffset="73" stroke-width="3"></circle></svg>
+</div>
+</div>
+<div class="flex-1">
+<div class="flex items-center justify-between mb-2">
+<div class="flex items-center gap-2">
+<div class="w-5 h-5 bg-orange-500 rounded flex items-center justify-center"><span class="text-[10px] text-white font-bold">R</span></div>
+<span class="text-caption text-zinc-500 font-bold uppercase tracking-wider">r/ecommerce</span>
+</div>
+<span class="px-2 py-0.5 bg-zinc-50 text-zinc-400 text-[11px] font-bold rounded-full border border-zinc-100 uppercase">暂缓</span>
+</div>
+<h3 class="font-h2 text-zinc-900 mb-3 group-hover:text-blue-600 transition-colors">Any way to remove background from 100 images at once?</h3>
+<div class="flex items-center gap-4">
+<span class="text-xs text-zinc-400">8.9k searches/mo</span>
+<div class="ml-auto flex gap-2">
+<span class="tag-red text-[10px] font-bold px-2 py-0.5 rounded-md uppercase">高竞争</span>
+</div>
+</div>
+</div>
+</div>
+</div>
+<!-- Card 5 -->
+<div class="group bg-white border border-zinc-200 p-lg rounded-xl hover:border-zinc-300 transition-all cursor-pointer">
+<div class="flex gap-md">
+<div class="relative shrink-0 flex flex-col items-center">
+<div class="relative flex items-center justify-center w-14 h-14 rounded-full border-4 border-emerald-100">
+<span class="text-lg font-bold text-emerald-600">84</span>
+<svg class="absolute -inset-1 w-16 h-16 rotate-[-90deg]"><circle class="text-emerald-500" cx="32" cy="32" fill="transparent" r="30" stroke="currentColor" stroke-dasharray="188.5" stroke-dashoffset="30" stroke-width="3"></circle></svg>
+</div>
+</div>
+<div class="flex-1">
+<div class="flex items-center justify-between mb-2">
+<div class="flex items-center gap-2">
+<div class="w-5 h-5 bg-zinc-800 rounded flex items-center justify-center"><span class="text-[10px] text-white font-bold">Y</span></div>
+<span class="text-caption text-zinc-500 font-bold uppercase tracking-wider">Hacker News</span>
+</div>
+</div>
+<h3 class="font-h2 text-zinc-900 mb-3 group-hover:text-blue-600 transition-colors">Need a simple tool to watermark 500+ product photos at once</h3>
+<div class="flex items-center gap-4">
+<span class="text-xs text-zinc-400">1.4k searches/mo</span>
+<div class="ml-auto flex gap-2">
+<span class="tag-neutral text-[10px] font-bold px-2 py-0.5 rounded-md uppercase">电商</span>
+<span class="tag-green text-[10px] font-bold px-2 py-0.5 rounded-md uppercase">SEO友好</span>
+</div>
+</div>
+</div>
+</div>
+</div>
+<!-- Card 6 -->
+<div class="group bg-white border border-zinc-200 p-lg rounded-xl hover:border-zinc-300 transition-all cursor-pointer">
+<div class="flex gap-md">
+<div class="relative shrink-0 flex flex-col items-center">
+<div class="relative flex items-center justify-center w-14 h-14 rounded-full border-4 border-zinc-100">
+<span class="text-lg font-bold text-zinc-500">73</span>
+<svg class="absolute -inset-1 w-16 h-16 rotate-[-90deg]"><circle class="text-zinc-200" cx="32" cy="32" fill="transparent" r="30" stroke="currentColor" stroke-dasharray="188.5" stroke-dashoffset="51" stroke-width="3"></circle></svg>
+</div>
+</div>
+<div class="flex-1">
+<div class="flex items-center justify-between mb-2">
+<div class="flex items-center gap-2">
+<div class="w-5 h-5 bg-orange-500 rounded flex items-center justify-center"><span class="text-[10px] text-white font-bold">R</span></div>
+<span class="text-caption text-zinc-500 font-bold uppercase tracking-wider">r/datascience</span>
+</div>
+</div>
+<h3 class="font-h2 text-zinc-900 mb-3 group-hover:text-blue-600 transition-colors">Is there an AI tool that reads my CSV and auto-generates charts?</h3>
+<div class="flex items-center gap-4">
+<span class="text-xs text-zinc-400">5.6k searches/mo</span>
+<div class="ml-auto flex gap-2">
+<span class="tag-neutral text-[10px] font-bold px-2 py-0.5 rounded-md uppercase">数据</span>
+<span class="tag-neutral text-[10px] font-bold px-2 py-0.5 rounded-md uppercase">中等竞争</span>
+</div>
+</div>
+</div>
+</div>
+</div>
+</div>
+</div>
+<!-- Detail Column -->
+<aside class="w-[440px] shrink-0 sticky top-0 overflow-y-auto no-scrollbar">
+<div class="glass-card rounded-xl h-full flex flex-col shadow-xl border-zinc-200">
+<div class="p-lg border-b border-zinc-200/50">
+<div class="flex items-center justify-between mb-4">
+<div class="flex items-center gap-3">
+<div class="w-10 h-10 bg-orange-500 rounded-lg flex items-center justify-center"><span class="text-white font-bold">R</span></div>
+<div>
+<h4 class="text-sm font-bold text-zinc-900">Reddit / r/DataHoarder</h4>
+<span class="text-xs text-zinc-400">2026-04-22</span>
+</div>
+</div>
+<button class="text-zinc-400 hover:text-zinc-600"><span class="material-symbols-outlined">more_vert</span></button>
+</div>
+<h2 class="font-h1 text-zinc-900 leading-tight mb-2">Need a tool to batch rename files based on content</h2>
+<a class="inline-flex items-center gap-2 px-4 py-2 bg-zinc-900 text-white text-sm font-bold rounded-lg hover:bg-zinc-800 transition-all w-full justify-center" href="#">
+<span class="material-symbols-outlined text-lg">open_in_new</span>
+                        查看原始帖子 (View Original Post)
+                    </a>
+</div>
+<div class="p-lg flex-1 space-y-lg overflow-y-auto no-scrollbar">
+<!-- AI Score Section -->
+<div class="space-y-sm">
+<div class="flex items-baseline justify-between">
+<div class="flex items-center gap-2">
+<span class="text-label-caps text-zinc-500">AI 可行性评分</span>
+<span class="px-2 py-0.5 bg-emerald-100 text-emerald-700 text-[10px] font-bold rounded uppercase">极力推荐</span>
+</div>
+<span class="text-h2 text-emerald-600">92/100</span>
+</div>
+<div class="h-2 bg-zinc-100 rounded-full overflow-hidden">
+<div class="h-full bg-emerald-500 rounded-full" style="width: 92%"></div>
+</div>
+</div>
+<!-- AI Summary -->
+<div class="space-y-sm">
+<h4 class="text-xs font-bold text-zinc-400 uppercase tracking-widest flex items-center gap-2">
+<span class="material-symbols-outlined text-sm" style="font-variation-settings: 'FILL' 1;">auto_awesome</span>
+                            AI 需求洞察
+                        </h4>
+<div class="bg-blue-50/50 p-md rounded-lg border border-blue-100">
+<p class="text-body-md text-zinc-800 leading-relaxed">
+                                用户表达了对“智能重命名”工具的明确渴求。目前现有的文件管理工具大多只能根据规则重命名，而用户需要根据内容语义（如发票金额、文档主题）自动提取关键词。市场存在明显的工具站机会。
+                            </p>
+</div>
+</div>
+<!-- Related Competitors -->
+<div class="space-y-sm">
+<h4 class="text-xs font-bold text-zinc-400 uppercase tracking-widest">相关竞品</h4>
+<div class="flex flex-wrap gap-2">
+<a class="px-3 py-1.5 bg-white border border-zinc-200 rounded-md text-xs font-medium text-zinc-700 hover:bg-zinc-50 flex items-center gap-1" href="#">
+                                Bulk Rename Utility <span class="material-symbols-outlined text-[10px]">link</span>
+</a>
+<a class="px-3 py-1.5 bg-white border border-zinc-200 rounded-md text-xs font-medium text-zinc-700 hover:bg-zinc-50 flex items-center gap-1" href="#">
+                                PowerRename <span class="material-symbols-outlined text-[10px]">link</span>
+</a>
+<a class="px-3 py-1.5 bg-white border border-zinc-200 rounded-md text-xs font-medium text-zinc-700 hover:bg-zinc-50 flex items-center gap-1" href="#">
+                                NameChanger <span class="material-symbols-outlined text-[10px]">link</span>
+</a>
+</div>
+</div>
+<!-- Similar Demands -->
+<div class="space-y-sm">
+<h4 class="text-xs font-bold text-zinc-400 uppercase tracking-widest">相似需求推荐</h4>
+<div class="space-y-2">
+<div class="p-3 bg-zinc-50/50 border border-zinc-100 rounded-lg hover:bg-zinc-50 transition-colors cursor-pointer">
+<p class="text-[13px] font-semibold text-zinc-900 line-clamp-1">AI-based file categorization tool for PDFs</p>
+<div class="flex items-center justify-between mt-1">
+<span class="text-[10px] text-zinc-400">Score: 88</span>
+<span class="text-[10px] font-bold text-blue-600">强相关</span>
+</div>
+</div>
+<div class="p-3 bg-zinc-50/50 border border-zinc-100 rounded-lg hover:bg-zinc-50 transition-colors cursor-pointer">
+<p class="text-[13px] font-semibold text-zinc-900 line-clamp-1">Bulk image metadata editor using GPT-4</p>
+<div class="flex items-center justify-between mt-1">
+<span class="text-[10px] text-zinc-400">Score: 82</span>
+<span class="text-[10px] font-bold text-blue-600">工具类</span>
+</div>
+</div>
+</div>
+</div>
+<!-- Action Area -->
+<div class="pt-4 space-y-2">
+<button class="w-full flex items-center justify-center gap-2 py-3 bg-emerald-500 text-white font-bold rounded-lg hover:bg-emerald-600 shadow-md">
+<span class="material-symbols-outlined text-lg">check_circle</span>
+                            标记为可行 (Go)
+                        </button>
+<div class="grid grid-cols-2 gap-2">
+<button class="flex items-center justify-center gap-2 py-2.5 bg-white border border-zinc-200 text-zinc-600 font-semibold rounded-lg hover:bg-zinc-50">
+<span class="material-symbols-outlined text-lg">pending</span> 待审核
+                            </button>
+<button class="flex items-center justify-center gap-2 py-2.5 bg-white border border-zinc-200 text-zinc-600 font-semibold rounded-lg hover:bg-zinc-50">
+<span class="material-symbols-outlined text-lg">pause_circle</span> 暂缓
+                            </button>
+</div>
+</div>
+</div>
+</div>
+</aside>
+</main>
+</div>
+<!-- Background Decoration -->
+<div class="fixed -bottom-32 -left-32 w-96 h-96 bg-primary/5 rounded-full blur-[120px] pointer-events-none -z-10"></div>
+<div class="fixed top-20 -right-20 w-80 h-80 bg-emerald-500/5 rounded-full blur-[100px] pointer-events-none -z-10"></div>
+</body></html>

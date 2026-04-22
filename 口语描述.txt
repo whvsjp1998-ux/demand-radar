@@ -1,0 +1,134 @@
+请严格按照以下设计规范，用  Next.js + Tailwind CSS 还原这个界面，不要省略任何细节。
+整体布局
+
+全屏两栏布局：左侧固定导航栏（w-64）+ 右侧主区域（flex-1）
+主区域分为顶部 header + 下方内容区
+内容区横向分为左侧卡片列表（flex-1）和右侧详情面板（w-440px 固定宽）
+背景色：#f9f9ff，字体：Inter
+
+
+左侧导航栏
+
+宽度 256px，高度 100vh，固定在左侧
+背景：bg-zinc-50/50 + backdrop-blur-xl，右边框：border-zinc-200/50
+顶部 logo 区（px-6，mb-8）：
+
+主标题："Demand Radar"，颜色 text-blue-600，字体极粗（font-black），tracking-widest，全大写，字号 xs
+副标题："INTELLIGENCE SUITE"，颜色 text-zinc-400，字号 10px，tracking-widest
+
+
+导航菜单项（激活态）：
+
+图标：radar（Material Symbols），文字："Market Radar"
+激活样式：text-blue-600 font-bold，右侧有 2px 蓝色边框，背景轻微高亮
+
+
+底部用户信息（border-t 分隔）：
+
+圆形头像（w-8 h-8），蓝色背景
+名字："Alex Chen"，字号 xs，font-bold
+副文本："Premium Plan"，字号 10px，text-zinc-500
+
+
+
+
+顶部 Header
+
+高度 64px，sticky，bg-white/70 backdrop-blur-2xl，底部阴影+边框
+左侧：搜索框（max-w-md），圆角 xl，背景 bg-zinc-100/50，左侧有搜索图标，placeholder："Search signals or markets..."
+右侧：通知铃铛按钮 + 竖线分隔符 + 文字"市场雷达 (Market Radar)"（font-semibold）
+
+
+左侧主内容区
+顶部统计卡片（4列等宽 grid）
+每张卡片：glass-card（白色70%透明+blur+细边框），圆角 xl，padding lg
+
+卡片1：标签"今日新增"，数字 12，图标 add_chart（蓝色）
+卡片2：标签"可行需求"，数字 3，图标 check_circle（绿色）
+卡片3：标签"待审核"，数字 8，图标 pending（琥珀色）
+卡片4：标签"平均AI评分"，数字 84，图标 psychology（紫色）
+数字字号 h1（32px），标签字号 13px，颜色 text-zinc-500
+
+筛选/排序栏
+
+左侧 Tab 按钮组（背景 bg-zinc-100/50，圆角 lg）：
+
+"全部"（激活：白色背景+阴影+蓝色文字），"可行"，"待审核"（灰色文字）
+
+
+右侧：排序方式文字 + 下拉按钮"按AI评分"（白色border按钮+展开图标）
+
+需求信号卡片列表
+每张卡片通用结构：白色背景，圆角 xl，padding lg，hover 时边框加深
+左侧圆形评分环：
+
+圆形（w-14 h-14），外边框颜色根据分数：绿色（≥80）/ 灰色（60-79）/ 琥珀色（<70）
+中间显示分数，字号 lg，font-bold，颜色与边框一致
+SVG 绘制圆弧进度条（r=30，circumference=188.5），rotate -90deg
+
+右侧内容区：
+
+第一行：平台来源图标（小方块，Reddit=橙色R，ProductHunt=红色P，HackerNews=黑色Y）+ 来源名称（大写，灰色，tracking-wider）+ 右侧状态标签
+标题：字号 24px，font-semibold，hover 变蓝色
+底部：点赞数/搜索量 + 右侧标签组（tag-green=绿底绿字，tag-red=红底红字，tag-neutral=灰底灰字，圆角 md，大写，10px）
+
+状态标签：
+
+待审核：bg-amber-50 text-amber-600 border-amber-100
+可行：bg-emerald-50 text-emerald-600 border-emerald-100
+暂缓：bg-zinc-50 text-zinc-400 border-zinc-100
+
+激活卡片（Card 1）额外样式：
+
+边框：border-2 border-primary-container（蓝色），外发光：ring-4 ring-primary-fixed/20
+
+
+右侧详情面板（w-440px）
+glass-card，圆角 xl，全高，overflow scroll
+顶部区域（border-b 分隔）
+
+平台图标（w-10 h-10 圆角 lg 橙色）+ 来源名 + 日期（2026-04-22）+ 右上角三点菜单
+标题（h1大号，font-semibold，leading-tight）
+黑色按钮"查看原始帖子 (View Original Post)"，全宽，居中，带 open_in_new 图标
+
+内容区（overflow scroll）
+AI评分条：
+
+标签"AI 可行性评分" + 绿色徽章"极力推荐"
+右侧显示 92/100（h2字号，绿色）
+进度条：高 8px，圆角，绿色填充（宽度=分数%）
+
+AI需求洞察：
+
+标题带星星图标，大写，tracking-widest，灰色
+内容卡片：bg-blue-50/50 border-blue-100 rounded-lg p-md，正文文字
+
+相关竞品：
+
+横向 flex-wrap 按钮组，白色边框按钮，带 link 图标
+竞品：Bulk Rename Utility、PowerRename、NameChanger
+
+相似需求推荐：
+
+每项：bg-zinc-50/50 border-zinc-100 rounded-lg p-3
+标题（13px font-semibold）+ 底部 Score 和相关性标签
+
+操作按钮区（底部）：
+
+绿色大按钮"标记为可行 (Go)"，全宽，带 check_circle 图标
+两列按钮："待审核"（pending 图标）、"暂缓"（pause_circle 图标），白色边框
+
+
+背景装饰
+
+左下角：#0058bc 5%透明度圆形光晕，w-96 blur-[120px]，fixed -bottom-32 -left-32
+右上角：emerald-500 5%透明度圆形光晕，w-80 blur-[100px]，fixed top-20 -right-20
+
+
+字体引用：
+
+Google Fonts：Inter（300-900）
+Material Symbols Outlined
+
+Tailwind CDN： https://cdn.tailwindcss.com?plugins=forms,container-queries
+请完整还原，不要简化或省略任何模块。
