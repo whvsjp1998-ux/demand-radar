@@ -44,7 +44,7 @@ export async function GET() {
         Accept: "application/json",
       },
       body: JSON.stringify({ query: QUERY }),
-      next: { revalidate: 600 }, // cache 10 min
+      cache: "no-store",
     });
 
     if (!res.ok) {
